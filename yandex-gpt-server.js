@@ -7,8 +7,8 @@ app.use(cors());
 app.use(express.json());
 
 // ===== КОНФИГУРАЦИЯ =====
-const YANDEX_API_KEY = process.env.YANDEX_API_KEY;  // БЕЗ ХАРДКОДА
-const YANDEX_FOLDER_ID = process.env.YANDEX_FOLDER_ID; // ВСТАВЬТЕ ВАШ ПОЛНЫЙ КЛЮЧ
+const YANDEX_API_KEY = process.env.YANDEX_API_KEY;
+const YANDEX_FOLDER_ID = process.env.YANDEX_FOLDER_ID;
 
 // Функция запроса к YandexGPT
 async function callYandexGPT(promptText) {
@@ -64,15 +64,22 @@ app.post('/api/place-info', async (req, res) => {
     const { name, description } = req.body;
     
     try {
-        const prompt = `Расскажи о достопримечательности "${name}" в строго следующем формате (каждый пункт с новой строки):
+        const prompt = `Ты — гид, который говорит КОРОТКО и ПО ДЕЛУ. Расскажи о месте "${name}" в 3-4 предложениях.
 
-📅 Год постройки/открытия: [укажи год, если известно, иначе "неизвестно"]
-⭐ Почему стоит посетить: [2-3 предложения]
-🤔 Интересный факт: [1 предложение]
+❗ ПРАВИЛА:
+- НЕ пиши "это красивое место", "рекомендую", "уникальное", "обязательно посетить"
+- НЕ больше 4 предложений
+- САМОЕ ГЛАВНОЕ — в ПЕРВОМ предложении
+- Только КОНКРЕТНЫЕ факты
 
-${description ? `Дополнительная информация: ${description}` : ''}
+ФОРМАТ (каждый пункт на новой строке):
+📜 Название: [1 короткое предложение о происхождении]
+✨ Суть: [1 предложение о главной особенности]
+💫 Фишка: [1 предложение о том, почему это место интересно]
 
-Отвечай только в этом формате, без лишнего текста.`;
+${description ? `Из базы: ${description}` : ''}
+
+ОТВЕЧАЙ ТОЛЬКО ТАК. КОРОТКО. ПО ДЕЛУ.`;
 
         const aiResponse = await callYandexGPT(prompt);
         
