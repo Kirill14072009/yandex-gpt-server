@@ -32,43 +32,70 @@ function transliterate(text) {
 // ===== ФУНКЦИЯ ПОИСКА ФОТО (ВСЕ ИСТОЧНИКИ) =====
 async function searchPhoto(name, lat, lng) {
   try {
+    // 🔥 1. Wikipedia Geo Search — ищем статью по координатам
+    const wikiPhoto = await searchWikipediaByCoords(lat, lng);
+    if (wikiPhoto) return wikiPhoto;
+    
+    // 🔥 2. Wikipedia по названию
+    const wikiPhotoByName = await searchWikipediaByName(name);
+    if (wikiPhotoByName) return wikiPhotoByName;
+    
+    // 🔥 3. Wikimedia Commons (в последнюю очередь)
     const translitName = transliterate(name);
-    
-    // 🔥 1. GOOGLE MAPS (самый точный — по координатам)
-    if (GOOGLE_API_KEY && lat && lng) {
-      console.log('🔍 Google Maps...');
-      const photoUrl = await searchGoogleMaps(name, lat, lng);
-      if (photoUrl) { console.log('✅ Google Maps найдено'); return photoUrl; }
-    }
-    
-    // 🔥 2. UNSPLASH (качественные фото)
-    if (UNSPLASH_ACCESS_KEY) {
-      console.log('🔍 Unsplash (оригинал)...');
-      let photoUrl = await searchUnsplash(name);
-      if (photoUrl) { console.log('✅ Unsplash найдено'); return photoUrl; }
-      
-      if (translitName !== name) {
-        console.log('🔍 Unsplash (транслит)...');
-        photoUrl = await searchUnsplash(translitName);
-        if (photoUrl) { console.log('✅ Unsplash (транслит) найдено'); return photoUrl; }
-      }
-    }
-    
-    // 🔥 3. WIKIMEDIA (бесплатно, но менее точно)
-    console.log('🔍 Wikimedia (оригинал)...');
     let photoUrl = await searchWikimedia(name);
-    if (photoUrl) { console.log('✅ Wikimedia найдено'); return photoUrl; }
+    if (photoUrl) return photoUrl;
     
     if (translitName !== name) {
-      console.log('🔍 Wikimedia (транслит)...');
       photoUrl = await searchWikimedia(translitName);
-      if (photoUrl) { console.log('✅ Wikimedia (транслит) найдено'); return photoUrl; }
+      if (photoUrl) return photoUrl;
     }
     
-    console.log('❌ Фото не найдено');
     return null;
   } catch (e) {
-    console.error('❌ Ошибка поиска фото:', e.message);
+    return null;
+  }
+}
+
+// 🔥 ПОИСК ПО КООРДИНАТАМ ЧЕРЕЗ WIKIPEDIA
+async function searchWikipediaByCoords(lat, lng) {
+  try {
+    // Ищем статьи рядом с координатами
+    const url = `https://ru.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${lat}|${lng}&gsradius=100&gslimit=3&format=json&origin=*`;
+    const response = await axios.get(url, { timeout: 5000 });
+    const pages = response.data?.query?.geosearch;
+    
+    if (!pages || pages.length === 0) return null;
+    
+    // Берём первую статью и ищем её главное фото
+    const pageId = pages[0].pageid;
+    const imageUrl = `https://ru.wikipedia.org/w/api.php?action=query&pageids=${pageId}&prop=pageimages&pithumbsize=800&format=json&origin=*`;
+    const imageResponse = await axios.get(imageUrl, { timeout: 5000 });
+    const page = imageResponse.data?.query?.pages?.[pageId];
+    
+    return page?.thumbnail?.source || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// 🔥 ПОИСК ПО НАЗВАНИЮ ЧЕРЕЗ WIKIPEDIA
+async function searchWikipediaByName(name) {
+  try {
+    // Ищем статью по названию
+    const searchUrl = `https://ru.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(name)}&srlimit=3&format=json&origin=*`;
+    const response = await axios.get(searchUrl, { timeout: 5000 });
+    const results = response.data?.query?.search;
+    
+    if (!results || results.length === 0) return null;
+    
+    // Берём первую статью и ищем фото
+    const pageId = results[0].pageid;
+    const imageUrl = `https://ru.wikipedia.org/w/api.php?action=query&pageids=${pageId}&prop=pageimages&pithumbsize=800&format=json&origin=*`;
+    const imageResponse = await axios.get(imageUrl, { timeout: 5000 });
+    const page = imageResponse.data?.query?.pages?.[pageId];
+    
+    return page?.thumbnail?.source || null;
+  } catch (e) {
     return null;
   }
 }
@@ -91,36 +118,6 @@ async function searchWikimedia(query) {
     const pages = imageResponse.data?.query?.pages;
     const firstPage = Object.values(pages)[0];
     return firstPage?.imageinfo?.[0]?.thumburl || firstPage?.imageinfo?.[0]?.url || null;
-  } catch (e) {
-    return null;
-  }
-}
-
-async function searchGoogleMaps(name, lat, lng) {
-  try {
-    const searchUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=100&keyword=${encodeURIComponent(name)}&key=${GOOGLE_API_KEY}`;
-    const response = await axios.get(searchUrl, { timeout: 5000 });
-    const places = response.data?.results;
-    if (!places || places.length === 0) return null;
-    const place = places[0];
-    if (place.photos && place.photos.length > 0) {
-      return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photo_reference=${place.photos[0].photo_reference}&key=${GOOGLE_API_KEY}`;
-    }
-    return null;
-  } catch (e) {
-    return null;
-  }
-}
-
-async function searchUnsplash(query) {
-  try {
-    const cleanQuery = query.split(' ').slice(0, 3).join(' ');
-    const response = await axios.get('https://api.unsplash.com/search/photos', {
-      params: { query: cleanQuery, per_page: 1, orientation: 'landscape' },
-      headers: { 'Authorization': `Client-ID ${UNSPLASH_ACCESS_KEY}` },
-      timeout: 5000,
-    });
-    return response.data?.results?.[0]?.urls?.regular || null;
   } catch (e) {
     return null;
   }
