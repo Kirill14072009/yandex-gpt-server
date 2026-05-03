@@ -34,29 +34,17 @@ async function searchPhoto(name, lat, lng) {
   try {
     const translitName = transliterate(name);
     
-    // 1. Wikimedia с оригинальным названием
-    console.log('🔍 Wikimedia (оригинал)...');
-    let photoUrl = await searchWikimedia(name);
-    if (photoUrl) { console.log('✅ Wikimedia найдено'); return photoUrl; }
-    
-    // 2. Wikimedia с транслитерацией
-    if (translitName !== name) {
-      console.log('🔍 Wikimedia (транслит)...');
-      photoUrl = await searchWikimedia(translitName);
-      if (photoUrl) { console.log('✅ Wikimedia (транслит) найдено'); return photoUrl; }
-    }
-    
-    // 3. Google Maps по координатам
+    // 🔥 1. GOOGLE MAPS (самый точный — по координатам)
     if (GOOGLE_API_KEY && lat && lng) {
       console.log('🔍 Google Maps...');
-      photoUrl = await searchGoogleMaps(name, lat, lng);
+      const photoUrl = await searchGoogleMaps(name, lat, lng);
       if (photoUrl) { console.log('✅ Google Maps найдено'); return photoUrl; }
     }
     
-    // 4. Unsplash
+    // 🔥 2. UNSPLASH (качественные фото)
     if (UNSPLASH_ACCESS_KEY) {
       console.log('🔍 Unsplash (оригинал)...');
-      photoUrl = await searchUnsplash(name);
+      let photoUrl = await searchUnsplash(name);
       if (photoUrl) { console.log('✅ Unsplash найдено'); return photoUrl; }
       
       if (translitName !== name) {
@@ -66,19 +54,15 @@ async function searchPhoto(name, lat, lng) {
       }
     }
     
-    // 5. Wikimedia с ключевыми словами
-    const keywords = name
-      .replace(/[А-Я]\.[ ]?[А-Я]\.[ ]?/g, '')
-      .replace(/им\./g, '').replace(/имени/g, '')
-      .replace(/Памятник/g, '').replace(/памятник/g, '')
-      .replace(/Бюст/g, '').replace(/бюст/g, '')
-      .replace(/Сквер/g, '').replace(/Парк/g, '')
-      .trim();
+    // 🔥 3. WIKIMEDIA (бесплатно, но менее точно)
+    console.log('🔍 Wikimedia (оригинал)...');
+    let photoUrl = await searchWikimedia(name);
+    if (photoUrl) { console.log('✅ Wikimedia найдено'); return photoUrl; }
     
-    if (keywords && keywords !== name) {
-      console.log('🔍 Wikimedia (ключевые слова)...');
-      photoUrl = await searchWikimedia(keywords);
-      if (photoUrl) { console.log('✅ Wikimedia (ключевые слова) найдено'); return photoUrl; }
+    if (translitName !== name) {
+      console.log('🔍 Wikimedia (транслит)...');
+      photoUrl = await searchWikimedia(translitName);
+      if (photoUrl) { console.log('✅ Wikimedia (транслит) найдено'); return photoUrl; }
     }
     
     console.log('❌ Фото не найдено');
