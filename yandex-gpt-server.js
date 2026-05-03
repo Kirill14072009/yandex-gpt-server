@@ -12,25 +12,76 @@ const YANDEX_FOLDER_ID = process.env.YANDEX_FOLDER_ID;
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || null;
 const UNSPLASH_ACCESS_KEY = process.env.UNSPLASH_ACCESS_KEY || null;
 
-// ===== ФУНКЦИЯ ПОИСКА ФОТО =====
+// ===== ТРАНСЛИТЕРАЦИЯ =====
+function transliterate(text) {
+  const map = {
+    'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo',
+    'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm',
+    'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
+    'ф': 'f', 'х': 'h', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'sch',
+    'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+    'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Е': 'E', 'Ё': 'Yo',
+    'Ж': 'Zh', 'З': 'Z', 'И': 'I', 'Й': 'Y', 'К': 'K', 'Л': 'L', 'М': 'M',
+    'Н': 'N', 'О': 'O', 'П': 'P', 'Р': 'R', 'С': 'S', 'Т': 'T', 'У': 'U',
+    'Ф': 'F', 'Х': 'H', 'Ц': 'Ts', 'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Sch',
+    'Ъ': '', 'Ы': 'Y', 'Ь': '', 'Э': 'E', 'Ю': 'Yu', 'Я': 'Ya'
+  };
+  return text.split('').map(c => map[c] || c).join('');
+}
+
+// ===== ФУНКЦИЯ ПОИСКА ФОТО (ВСЕ ИСТОЧНИКИ) =====
 async function searchPhoto(name, lat, lng) {
   try {
-    // 1. Wikimedia Commons (бесплатно)
-    const commonsUrl = await searchWikimedia(name);
-    if (commonsUrl) return commonsUrl;
+    const translitName = transliterate(name);
     
-    // 2. Google Maps (если есть ключ)
-    if (GOOGLE_API_KEY) {
-      const googleUrl = await searchGoogleMaps(name, lat, lng);
-      if (googleUrl) return googleUrl;
+    // 1. Wikimedia с оригинальным названием
+    console.log('🔍 Wikimedia (оригинал)...');
+    let photoUrl = await searchWikimedia(name);
+    if (photoUrl) { console.log('✅ Wikimedia найдено'); return photoUrl; }
+    
+    // 2. Wikimedia с транслитерацией
+    if (translitName !== name) {
+      console.log('🔍 Wikimedia (транслит)...');
+      photoUrl = await searchWikimedia(translitName);
+      if (photoUrl) { console.log('✅ Wikimedia (транслит) найдено'); return photoUrl; }
     }
     
-    // 3. Unsplash (если есть ключ)
+    // 3. Google Maps по координатам
+    if (GOOGLE_API_KEY && lat && lng) {
+      console.log('🔍 Google Maps...');
+      photoUrl = await searchGoogleMaps(name, lat, lng);
+      if (photoUrl) { console.log('✅ Google Maps найдено'); return photoUrl; }
+    }
+    
+    // 4. Unsplash
     if (UNSPLASH_ACCESS_KEY) {
-      const unsplashUrl = await searchUnsplash(name);
-      if (unsplashUrl) return unsplashUrl;
+      console.log('🔍 Unsplash (оригинал)...');
+      photoUrl = await searchUnsplash(name);
+      if (photoUrl) { console.log('✅ Unsplash найдено'); return photoUrl; }
+      
+      if (translitName !== name) {
+        console.log('🔍 Unsplash (транслит)...');
+        photoUrl = await searchUnsplash(translitName);
+        if (photoUrl) { console.log('✅ Unsplash (транслит) найдено'); return photoUrl; }
+      }
     }
     
+    // 5. Wikimedia с ключевыми словами
+    const keywords = name
+      .replace(/[А-Я]\.[ ]?[А-Я]\.[ ]?/g, '')
+      .replace(/им\./g, '').replace(/имени/g, '')
+      .replace(/Памятник/g, '').replace(/памятник/g, '')
+      .replace(/Бюст/g, '').replace(/бюст/g, '')
+      .replace(/Сквер/g, '').replace(/Парк/g, '')
+      .trim();
+    
+    if (keywords && keywords !== name) {
+      console.log('🔍 Wikimedia (ключевые слова)...');
+      photoUrl = await searchWikimedia(keywords);
+      if (photoUrl) { console.log('✅ Wikimedia (ключевые слова) найдено'); return photoUrl; }
+    }
+    
+    console.log('❌ Фото не найдено');
     return null;
   } catch (e) {
     console.error('❌ Ошибка поиска фото:', e.message);
@@ -40,9 +91,11 @@ async function searchPhoto(name, lat, lng) {
 
 async function searchWikimedia(query) {
   try {
-    const cleanQuery = query.replace(/[А-Я]\.[ ]?[А-Я]\.[ ]?/g, '').replace(/им\./g, '').trim() || query;
-    const searchUrl = `https://commons.wikimedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanQuery)}&srnamespace=6&srlimit=5&format=json&origin=*`;
-    const response = await axios.get(searchUrl, { timeout: 5000 });
+    const cleanQuery = encodeURIComponent(query.replace(/[^\w\s]/g, '').trim());
+    if (!cleanQuery || cleanQuery.length < 3) return null;
+    
+    const searchUrl = `https://commons.wikimedia.org/w/api.php?action=query&list=search&srsearch=${cleanQuery}&srnamespace=6&srlimit=5&format=json&origin=*`;
+    const response = await axios.get(searchUrl, { timeout: 8000 });
     const searchResults = response.data?.query?.search;
     if (!searchResults || searchResults.length === 0) return null;
     
@@ -50,7 +103,7 @@ async function searchWikimedia(query) {
     if (imageTitles.length === 0) return null;
     
     const imageUrl = `https://commons.wikimedia.org/w/api.php?action=query&titles=${encodeURIComponent(imageTitles[0])}&prop=imageinfo&iiprop=url&iiurlwidth=800&format=json&origin=*`;
-    const imageResponse = await axios.get(imageUrl, { timeout: 5000 });
+    const imageResponse = await axios.get(imageUrl, { timeout: 8000 });
     const pages = imageResponse.data?.query?.pages;
     const firstPage = Object.values(pages)[0];
     return firstPage?.imageinfo?.[0]?.thumburl || firstPage?.imageinfo?.[0]?.url || null;
@@ -89,11 +142,9 @@ async function searchUnsplash(query) {
   }
 }
 
-// ===== ФУНКЦИЯ ЗАПРОСА К YandexGPT =====
+// ===== YandexGPT =====
 async function callYandexGPT(promptText) {
-  console.log('🚀 Отправка запроса к YandexGPT...');
-  console.log('📝 Prompt:', promptText.substring(0, 200) + '...');
-  
+  console.log('🚀 YandexGPT запрос...');
   try {
     const response = await axios.post(
       'https://llm.api.cloud.yandex.net/foundationModels/v1/completion',
@@ -101,7 +152,7 @@ async function callYandexGPT(promptText) {
         modelUri: `gpt://${YANDEX_FOLDER_ID}/yandexgpt-lite`,
         completionOptions: { stream: false, temperature: 0.6, maxTokens: 800 },
         messages: [
-          { role: 'system', text: 'Ты — эрудированный экскурсовод и краевед. Твоя задача — давать точные, емкие и содержательные ответы о достопримечательностях. Ты умеешь по названию определять тип объекта (памятник, бюст, мемориальная доска, парк, собор и т.д.) и рассказывать о нем самое главное.' },
+          { role: 'system', text: 'Ты — эрудированный экскурсовод и краевед. Давай точные и содержательные ответы о достопримечательностях.' },
           { role: 'user', text: promptText },
         ],
       },
@@ -110,21 +161,18 @@ async function callYandexGPT(promptText) {
         timeout: 30000,
       }
     );
-    
-    console.log('✅ YandexGPT ответил успешно');
+    console.log('✅ YandexGPT ответил');
     return response.data.result.alternatives[0].message.text;
   } catch (error) {
-    console.error('❌ YandexGPT ошибка:', error.message);
+    console.error('❌ YandexGPT:', error.message);
     throw error;
   }
 }
 
-// ===== ЭНДПОИНТ: ИНФОРМАЦИЯ О МЕСТЕ =====
+// ===== ЭНДПОИНТЫ =====
 app.post('/api/place-info', async (req, res) => {
-  console.log('\n📥 /api/place-info');
-  console.log('Название:', req.body.name);
-  
   const { name, description, latitude, longitude } = req.body;
+  console.log(`\n📥 ${name}`);
   
   try {
     const prompt = `Ты — экскурсовод. Расскажи о достопримечательности: "${name}".
@@ -134,31 +182,14 @@ ${description ? `Описание из базы: ${description}` : ''}
 
 ОПРЕДЕЛИ ТИП МЕСТА (одно-два слова): Памятник, Бюст, Мемориальная доска, Парк, Сквер, Музей, Собор, Церковь, Театр, Библиотека, Мост, Фонтан, Дворец, Усадьба, Крепость, Мемориал.
 
-Напиши 3-4 предложения О КОНКРЕТНОМ месте "${name}" по координатам ${latitude}, ${longitude}:
+Напиши 3-4 предложения О КОНКРЕТНОМ месте "${name}" по координатам ${latitude}, ${longitude}.
 
-Если памятник/бюст — КОМУ посвящён, чем известен человек.
-Если музей — ЧЕМУ посвящён, что внутри.
-Если сквер/парк — в честь кого назван (если известно) или просто "место для отдыха".
-Если собор/церковь — когда построен, архитектурный стиль.
-Если мост/фонтан — история создания, архитектор.
-
-Только факты. 3-4 предложения. Без "возможно", "к сожалению".
-
-Формат ответа СТРОГО:
+Формат:
 🏛️ [ТИП]
-[3-4 предложения о месте]
-
-Пример 1:
-🏛️ Памятник
-Бронзовая фигура поэта Сергея Есенина установлена в 1995 году в Таврическом саду. Памятник изображает поэта в полный рост с томиком стихов в руках. Это одно из самых лиричных мест парка.
-
-Пример 2:
-🏛️ Сквер
-Небольшой благоустроенный сквер с лавочками и клумбами. Назван в честь художника Ивана Шишкина. Хорошее место для отдыха в центре города.
+[3-4 предложения]
 
 Твой ответ:`;
 
-    // 🔥 ЗАПУСКАЕМ ПАРАЛЛЕЛЬНО: ИИ + ПОИСК ФОТО
     const [aiResponse, photoUrl] = await Promise.all([
       callYandexGPT(prompt),
       searchPhoto(name, latitude, longitude)
@@ -166,61 +197,30 @@ ${description ? `Описание из базы: ${description}` : ''}
     
     console.log('📸 Фото:', photoUrl ? 'найдено' : 'не найдено');
     
-    res.json({
-      success: true,
-      description: aiResponse,
-      photoUrl: photoUrl,
-    });
-    
+    res.json({ success: true, description: aiResponse, photoUrl });
   } catch (error) {
-    console.error('❌ Ошибка:', error.message);
-    res.status(500).json({ 
-      success: false, 
-      description: 'Не удалось получить информацию от ИИ. Попробуйте позже.',
-      error: error.message 
-    });
+    res.status(500).json({ success: false, description: 'Ошибка. Попробуйте позже.' });
   }
 });
 
-// ===== ЭНДПОИНТ: ЧАТ =====
 app.post('/api/chat', async (req, res) => {
-  console.log('\n📥 /api/chat');
-  console.log('Место:', req.body.placeName);
-  
   const { placeName, placeDescription, messages } = req.body;
+  const question = messages[messages.length - 1].text;
   
   try {
-    const lastMessage = messages[messages.length - 1];
-    const question = lastMessage.text;
-    
-    const prompt = `Ты — виртуальный гид. Ты находишься у места "${placeName}". 
-Известно о нем следующее: ${placeDescription || 'информация отсутствует'}
-
-**Вопрос от пользователя:** ${question}
-
-**Инструкции для ответа:**
-- Ответь на вопрос максимально конкретно и по делу.
-- Будь полезным и дружелюбным гидом. Не используй фразы "к сожалению, я не знаю" или "возможно".
-- Если информации недостаточно, скажи: "Точных данных об этом нет, но, судя по всему..."
-
-**Твой ответ:**`;
-
+    const prompt = `Ты — гид у места "${placeName}". ${placeDescription || ''}\nВопрос: ${question}\nОтветь конкретно и по делу.`;
     const aiResponse = await callYandexGPT(prompt);
-    
     res.json({ success: true, response: aiResponse });
-    
   } catch (error) {
-    console.error('❌ Ошибка чата:', error.message);
-    res.status(500).json({ success: false, response: 'Извините, произошла ошибка. Попробуйте позже.' });
+    res.status(500).json({ success: false, response: 'Ошибка.' });
   }
 });
 
-// ===== ТЕСТ =====
 app.get('/api/test', (req, res) => {
-  res.json({ status: 'ok', message: 'Сервер работает' });
+  res.json({ status: 'ok' });
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅ Сервер запущен на порту ${PORT}`);
+  console.log(`✅ Сервер на порту ${PORT}`);
 });
