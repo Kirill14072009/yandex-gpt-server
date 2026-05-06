@@ -131,7 +131,7 @@ async function callYandexGPT(promptText) {
       'https://llm.api.cloud.yandex.net/foundationModels/v1/completion',
       {
         modelUri: `gpt://${YANDEX_FOLDER_ID}/yandexgpt-lite`,
-        completionOptions: { stream: false, temperature: 0.6, maxTokens: 800 },
+        completionOptions: { stream: false, temperature: 0.6, maxTokens: 2000 },
         messages: [
   {
     role: 'system',
