@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
+const { generateExcursion } = require('./excursion-guide');
 
 const app = express();
 app.use(cors());
@@ -252,7 +253,21 @@ app.post('/api/chat', async (req, res) => {
     res.status(500).json({ success: false, response: 'Ошибка.' });
   }
 });
-
+app.post('/api/excursion', async (req, res) => {
+  const { placeName, placeDescription, excursionTitle } = req.body;
+  
+  console.log('🎙️ Запрос экскурсии:', placeName);
+  
+  try {
+    const text = await generateExcursion(placeName, placeDescription, excursionTitle);
+    res.json({ text });
+  } catch (e) {
+    res.status(500).json({ 
+      text: 'Извините, не удалось подготовить экскурсию. Попробуйте позже.',
+      error: e.message 
+    });
+  }
+});
 app.get('/api/test', (req, res) => {
   res.json({ status: 'ok' });
 });
